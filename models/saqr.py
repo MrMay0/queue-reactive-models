@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 from models.common import BaseQRSimulator, CalibrationResult, calibrate_common
@@ -11,6 +12,7 @@ from models.common import BaseQRSimulator, CalibrationResult, calibrate_common
 class SAQRCalibration:
     common: CalibrationResult
     smoothing_alpha: float = 25.0
+    joint_distributions: dict[int, dict[str, np.ndarray | int]] | None = None
 
     @property
     def intensity_df(self) -> pd.DataFrame:
@@ -31,21 +33,24 @@ def calibrate_saqr(
 ) -> SAQRCalibration:
     if common is None:
         common = calibrate_common(event_flow_path, raw_dir=raw_dir, level=level, min_obs=min_obs)
-    return SAQRCalibration(common=common, smoothing_alpha=smoothing_alpha)
+    return SAQRCalibration(
+        common=common,
+        smoothing_alpha=smoothing_alpha,
+        joint_distributions=common.build_joint_sampler_tables(smoothing_alpha),
+    )
 
 
 class SAQRSimulator(BaseQRSimulator):
     def __init__(self, calibration: SAQRCalibration):
         super().__init__(calibration.common)
         self.saqr_calibration = calibration
+        self._joint_distributions = calibration.joint_distributions or calibration.common.build_joint_sampler_tables(calibration.smoothing_alpha)
 
     def _rate_table(self, n: int) -> pd.Series:
         row = self.calibration.intensity_df.set_index("n").loc[n]
         return row[["lambda_L", "lambda_C", "lambda_M"]]
 
     def _sample_event(self, n: int, queue_size: int, rng) -> tuple[str, int]:
-        return self.calibration.joint_sample(
-            n,
-            rng,
-            smoothing_alpha=self.saqr_calibration.smoothing_alpha,
-        )
+        table = self._joint_distributions.get(int(n), self._joint_distributions[-1])
+        idx = int(np.searchsorted(table["cdf"], rng.random(), side="left"))
+        return str(table["etas"][idx]), int(table["sizes"][idx])

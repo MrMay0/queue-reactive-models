@@ -1,0 +1,20 @@
+Traceback (most recent call last):
+  File "/Users/ulysse/Desktop/Studies/Imperial/Market Microstructure/queue-modelling-LBO/scripts/build_remote_simulation_artifacts.py", line 338, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/Users/ulysse/Desktop/Studies/Imperial/Market Microstructure/queue-modelling-LBO/scripts/build_remote_simulation_artifacts.py", line 270, in main
+    export_calibration_artifacts(common, ftqr_cal, qru_cal, qr_model_dir, args.overwrite, event_flow_path, raw_dir)
+  File "/Users/ulysse/Desktop/Studies/Imperial/Market Microstructure/queue-modelling-LBO/scripts/build_remote_simulation_artifacts.py", line 210, in export_calibration_artifacts
+    build_qr_intensity_tables(
+  File "/Users/ulysse/Desktop/Studies/Imperial/Market Microstructure/queue-modelling-LBO/src/features/qr_empirical.py", line 193, in build_qr_intensity_tables
+    df_day = load_day(dataset, day, cols)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ulysse/Desktop/Studies/Imperial/Market Microstructure/queue-modelling-LBO/src/features/qr_empirical.py", line 24, in load_day
+    df_day = table.to_pandas()
+             ^^^^^^^^^^^^^^^^^
+  File "pyarrow/array.pxi", line 1032, in pyarrow.lib._PandasConvertible.to_pandas
+  File "pyarrow/table.pxi", line 5177, in pyarrow.lib.Table._to_pandas
+  File "/Users/ulysse/miniconda3/envs/trading/lib/python3.12/site-packages/pyarrow/pandas_compat.py", line 811, in table_to_dataframe
+    result = pa.lib.table_to_blocks(options, table, categories,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

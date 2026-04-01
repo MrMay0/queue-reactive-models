@@ -53,6 +53,7 @@ class CalibrationResult:
             for n, df_n in self.joint_size_df.groupby("n", sort=False)
         }
         self._joint_prior = _joint_distribution(self.joint_size_df)
+        self._joint_sampler_tables_cache: dict[float, dict[int, dict[str, np.ndarray | int]]] = {}
 
     def nearest_n(self, queue_size: int) -> int:
         queue_size = max(int(queue_size), 1)
@@ -78,26 +79,34 @@ class CalibrationResult:
         rng: np.random.Generator,
         smoothing_alpha: float = 25.0,
     ) -> tuple[str, int]:
-        sizes_n, probs_n, counts_n = self._joint_probs.get(int(n), self._joint_prior)
-        sizes_prior, probs_prior, _ = self._joint_prior
-        if counts_n <= 0:
-            pairs = sizes_prior
-            probs = probs_prior
-        else:
-            weight = counts_n / (counts_n + smoothing_alpha)
-            prior_map = {pair: prob for pair, prob in zip(sizes_prior, probs_prior)}
-            pairs = list(dict.fromkeys(list(sizes_n) + list(sizes_prior)))
-            local_map = {pair: prob for pair, prob in zip(sizes_n, probs_n)}
-            probs = np.array(
-                [
-                    weight * local_map.get(pair, 0.0) + (1.0 - weight) * prior_map.get(pair, 0.0)
-                    for pair in pairs
-                ],
-                dtype=float,
+        tables = self.build_joint_sampler_tables(smoothing_alpha)
+        table = tables.get(int(n), tables[-1])
+        idx = int(np.searchsorted(table["cdf"], rng.random(), side="left"))
+        return str(table["etas"][idx]), int(table["sizes"][idx])
+
+    def build_joint_sampler_tables(self, smoothing_alpha: float = 25.0) -> dict[int, dict[str, np.ndarray | int]]:
+        alpha_key = float(smoothing_alpha)
+        cached = self._joint_sampler_tables_cache.get(alpha_key)
+        if cached is not None:
+            return cached
+
+        prior_pairs, prior_probs, prior_count = self._joint_prior
+        prior_table = _build_joint_sampler_table(prior_pairs, prior_probs, prior_count)
+        tables: dict[int, dict[str, np.ndarray | int]] = {-1: prior_table}
+        for n in self.support_n:
+            pairs_n, probs_n, count_n = self._joint_probs.get(int(n), self._joint_prior)
+            pairs, probs = _blend_joint_distribution(
+                pairs_n,
+                probs_n,
+                count_n,
+                prior_pairs,
+                prior_probs,
+                smoothing_alpha=alpha_key,
             )
-            probs = probs / probs.sum()
-        eta, size = pairs[int(rng.choice(len(pairs), p=probs))]
-        return str(eta), int(size)
+            tables[int(n)] = _build_joint_sampler_table(pairs, probs, count_n)
+
+        self._joint_sampler_tables_cache[alpha_key] = tables
+        return tables
 
 
 @dataclass
@@ -124,6 +133,53 @@ def _joint_distribution(df: pd.DataFrame) -> tuple[list[tuple[str, int]], np.nda
     weights = weights / weights.sum()
     total = int(df["count"].sum()) if "count" in df.columns else len(df)
     return pairs, weights, total
+
+
+def _blend_joint_distribution(
+    pairs_n: list[tuple[str, int]],
+    probs_n: np.ndarray,
+    count_n: int,
+    prior_pairs: list[tuple[str, int]],
+    prior_probs: np.ndarray,
+    smoothing_alpha: float,
+) -> tuple[list[tuple[str, int]], np.ndarray]:
+    if count_n <= 0:
+        return prior_pairs, prior_probs
+
+    weight = count_n / (count_n + smoothing_alpha)
+    prior_map = {pair: prob for pair, prob in zip(prior_pairs, prior_probs)}
+    local_map = {pair: prob for pair, prob in zip(pairs_n, probs_n)}
+    pairs = list(dict.fromkeys(list(pairs_n) + list(prior_pairs)))
+    probs = np.array(
+        [
+            weight * local_map.get(pair, 0.0) + (1.0 - weight) * prior_map.get(pair, 0.0)
+            for pair in pairs
+        ],
+        dtype=float,
+    )
+    total_prob = probs.sum()
+    if total_prob <= 0:
+        return prior_pairs, prior_probs
+    probs /= total_prob
+    return pairs, probs
+
+
+def _build_joint_sampler_table(
+    pairs: list[tuple[str, int]],
+    probs: np.ndarray,
+    count: int,
+) -> dict[str, np.ndarray | int]:
+    etas = np.array([eta for eta, _ in pairs], dtype=object)
+    sizes = np.array([size for _, size in pairs], dtype=np.int64)
+    cdf = np.cumsum(probs, dtype=float)
+    cdf[-1] = 1.0
+    return {
+        "etas": etas,
+        "sizes": sizes,
+        "probs": np.array(probs, dtype=float),
+        "cdf": cdf,
+        "count": int(count),
+    }
 
 
 def _normalize_counter(counter: dict, names: list[str], count_name: str = "count") -> pd.DataFrame:

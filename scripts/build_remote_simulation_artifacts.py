@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build compact remote artifacts for QR result notebooks.")
     parser.add_argument("--event-flow", default=str(ROOT / "data/processed/FGBL_event_flow.parquet"))
     parser.add_argument("--raw-dir", default=str(ROOT / "data/raw"))
-    parser.add_argument("--models", nargs="+", default=["QRU", "QR", "FTQR", "SAQR"])
+    parser.add_argument("--models", nargs="+", default=["QRU", "QR", "FTQR"])
     parser.add_argument("--days", nargs="*", default=None, help="Explicit day list for sampled price series.")
     parser.add_argument("--plot-day", default=None, help="Representative day for Figure 9-style plots.")
     parser.add_argument("--plot-start", default="10:00:00")
@@ -267,16 +267,23 @@ def main() -> int:
     qr_cal = calibrate_qr(event_flow_path, raw_dir=raw_dir, level=args.level, min_obs=args.min_obs, common=common)
     qru_cal = calibrate_qru(event_flow_path, raw_dir=raw_dir, level=args.level, min_obs=args.min_obs, common=common)
     ftqr_cal = calibrate_ftqr(event_flow_path, raw_dir=raw_dir, level=args.level, min_obs=args.min_obs, common=common)
-    saqr_cal = calibrate_saqr(event_flow_path, raw_dir=raw_dir, level=args.level, min_obs=args.min_obs, smoothing_alpha=25.0, common=common)
-
     export_calibration_artifacts(common, ftqr_cal, qru_cal, qr_model_dir, args.overwrite, event_flow_path, raw_dir)
 
     simulators = {
         "QRU": QRUSimulator(qru_cal),
         "QR": QRSimulator(qr_cal),
         "FTQR": FTQRSimulator(ftqr_cal),
-        "SAQR": SAQRSimulator(saqr_cal),
     }
+    if "SAQR" in args.models:
+        saqr_cal = calibrate_saqr(
+            event_flow_path,
+            raw_dir=raw_dir,
+            level=args.level,
+            min_obs=args.min_obs,
+            smoothing_alpha=25.0,
+            common=common,
+        )
+        simulators["SAQR"] = SAQRSimulator(saqr_cal)
     selected_models = [m for m in args.models if m in simulators]
 
     for day_idx, day in enumerate(needed_days):

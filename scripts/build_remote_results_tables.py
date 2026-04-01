@@ -24,7 +24,7 @@ PERIODS = {
     "Calm": ("10:00:00", "14:00:00"),
     "Active": ("15:00:00", "18:00:00"),
 }
-MODEL_ORDER = ["QRU", "QR", "FTQR", "SAQR"]
+DEFAULT_MODEL_ORDER = ["QRU", "QR", "FTQR"]
 
 
 def require_file(path: Path) -> Path:
@@ -64,6 +64,9 @@ def main() -> int:
     plot_start = args.plot_start or metadata["plot_start"]
     plot_end = args.plot_end or metadata["plot_end"]
     stats_days = args.stats_days or metadata["stats_days"]
+    model_order = [model for model in metadata.get("models", DEFAULT_MODEL_ORDER) if model != "Real"]
+    if not model_order:
+        model_order = DEFAULT_MODEL_ORDER
     price_dir = require_file(input_dir / "price_dynamics")
 
     rows = []
@@ -71,7 +74,7 @@ def main() -> int:
         real_df = load_midprice(require_file(price_dir / f"real_{day}.parquet"))
         for period_name, (start_time, end_time) in PERIODS.items():
             sigma_real = period_volatility(real_df, start_time, end_time, annualization_factor)
-            for model in MODEL_ORDER:
+            for model in model_order:
                 sim_df = load_midprice(require_file(price_dir / f"{model.lower()}_{day}.parquet"))
                 sigma_sim = period_volatility(sim_df, start_time, end_time, annualization_factor)
                 rows.append(
@@ -102,7 +105,7 @@ def main() -> int:
     aggregated.to_csv(output_dir / "volatility_summary_aggregated.csv", index=False)
 
     plot_rows = []
-    for model in ["Real"] + MODEL_ORDER:
+    for model in ["Real"] + model_order:
         df = load_midprice(require_file(price_dir / f"{model.lower()}_{plot_day}.parquet"))
         df = df[(df["timestamp"] >= pd.Timestamp(f"{plot_day} {plot_start}", tz=metadata["timezone"])) & (df["timestamp"] <= pd.Timestamp(f"{plot_day} {plot_end}", tz=metadata["timezone"]))]
         vol = rolling_vol(df["mid_price"], annualization_factor, window_seconds=600)
